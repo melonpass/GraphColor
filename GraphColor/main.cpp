@@ -7,8 +7,8 @@
 #include<tuple>
 #include<ctime>
 using namespace std;
-const int max_iter_time = 4000000;
-const int bigNum = 1000;
+const int max_iter_time = 10000000;
+const int bigNum = 10000000;
 using step = tuple<int, int, int, int>;//0 is vertex 1 is old color 2 is new color 3 is delta
 
 pair<int,int> getData(std::fstream& file,vector<vector<int>>&);
@@ -16,7 +16,7 @@ bool isTabu(int vertex, int newColor, int** tabuList, int iterTimes);
 void iniSolution(vector<int>&colorSolution, int nColor);
 int iniRivalList(vector<vector<int>>&rivalList,const vector<vector<int>>&graph,const vector<int> & colorSolution);
 void showConflict(const vector<vector<int>>& graph, const vector<vector<int>>& rivalList, const vector<int>& colorSolution, int target);
-bool tabuSearch(const vector<vector<int>>&graph, vector<int>&colorSolution, vector<vector<int>>& rivalList, int ** tabuList,int fs);
+pair<bool,long> tabuSearch(const vector<vector<int>>&graph, vector<int>&colorSolution, vector<vector<int>>& rivalList, int ** tabuList,int fs);
 int calDelta(const vector<vector<int>>& rivalList, int vertex, int oldColor, int newColor);
 step findMove(const vector<vector<int>>&graph,vector<int>&colorSolution, vector<vector<int>>&rivalList,int** tabuList, int iterTimes,int fs,int bestfs);
 bool updateRivalList(const vector<vector<int>> & graph,vector<vector<int>>& rivalList,step move);
@@ -24,61 +24,101 @@ bool makeMove(const vector<vector<int>>& graph,vector<int>&colorSolution,vector<
 
 int main()
 {
+	vector<string> testFile{
+		"DSJC125.1.col",
+		"DSJC250.1.col",
+		"DSJC250.5.col",
+		"DSJC250.9.col",
+		"DSJC500.1.col",
+		"DSJC500.5.col",
+		"DSJC500.9.col",
+		"DSJC1000.1.col",
+		"DSJC1000.5.col",
+		"DSJC1000.9.col"
+	};
+	vector<int> optimalSolution{5,8,28,72,12,47,126,20,82,222};
+	string logFileName = "output.csv";
+	fstream logFile;
+	logFile.open(logFileName, ios::out);
+	logFile << "Instance,Algorithm,RandSeed,Duration,IterCount,Optima,Solution" << endl;
+	const auto seed = time(NULL);
+	srand(seed);
+	for (decltype(testFile.size())i = 0;i < 7;++i) {
+		string filename = testFile[i];
+		fstream file;
+		file.open(filename, ios::in);
+		if (!file.is_open()) { cerr << "can't open file" << filename << endl; return -1; }
+		logFile << filename<<","<<"TabuSearch"<<","<<seed<<",";
+		vector<vector<int>>graph;
+		//设置随机数种子，用于概率计算确保随机性
+		//读取数据
+		auto VNE = getData(file, graph);
+		file.close();
+		int nColor = optimalSolution[i] + 5;
 
-	string filename;
-	cin >> filename;
-	fstream file;
-	file.open(filename, ios::in);
-	if (!file.is_open()) { cerr << "can't open file" << filename << endl; return -1; }
-	vector<vector<int>>graph;
-	//设置随机数种子，用于概率计算确保随机性
-	srand(time(NULL));
-	//读取数据
-	auto VNE = getData(file, graph);
-
-	int nColor = VNE.first;
-
-	//解空间
-	vector<int> colorSolution(VNE.first, 0);
-	//仇恨表
-	vector<vector<int>> rivalList(VNE.first);
-	int**tabuList = new int*[VNE.first];
-	for (int i = 0; i < VNE.first; ++i) {
-		tabuList[i] = new int[nColor];
-		for (int j = 0; j < nColor; ++j) {
-			tabuList[i][j] = 0;
-		}
-	}
-
-	while (true)
-	{
-		//仇恨表伸缩大小为nColor。
-		for (auto & x : rivalList) {
-			x.resize(nColor);
-		}
-		//初始化解空间
-		iniSolution(colorSolution, nColor);
-		//仇恨表初始化,计算仇恨值
-		int fs = iniRivalList(rivalList, graph, colorSolution);
-		int best = fs;
-		//构造禁忌表
-		//之前都为初始化数据结构与一些必要的信息
-
-		bool flag = tabuSearch(graph, colorSolution, rivalList, tabuList,fs);
+		//解空间
+		vector<int> colorSolution(VNE.first, 0);
+		//仇恨表
+		vector<int> bestSolution(colorSolution.begin(), colorSolution.end());
+		vector<vector<int>> rivalList(VNE.first);
+		int**tabuList = new int*[VNE.first];
 		for (int i = 0; i < VNE.first; ++i) {
+			tabuList[i] = new int[nColor];
 			for (int j = 0; j < nColor; ++j) {
 				tabuList[i][j] = 0;
 			}
 		}
-		if (true != flag) { cout << nColor << "\t is false" << endl; break; }
-		else cout << nColor << "is OK" << endl;
-		--nColor;
 
+		while (true)
+		{
+			//仇恨表伸缩大小为nColor。
+			for (auto & x : rivalList) {
+				x.resize(nColor);
+			}
+			//初始化解空间
+			iniSolution(colorSolution, nColor);
+			//仇恨表初始化,计算仇恨值
+			int fs = iniRivalList(rivalList, graph, colorSolution);
+			int best = fs;
+			//构造禁忌表
+			//之前都为初始化数据结构与一些必要的信息
+			auto beginTime = clock();
+			auto result = tabuSearch(graph, colorSolution, rivalList, tabuList, fs);
+			auto endTime = clock();
+			for (int i = 0; i < VNE.first; ++i) {
+				for (int j = 0; j < nColor; ++j) {
+					tabuList[i][j] = 0;
+				}
+			}
+			if (true != result.first) {
+				cout << nColor << "\t is false" << endl; 
+				logFile << endTime - beginTime << ","<<result.second<<","<<"("<<nColor + 1<<"),";
+				for (const auto & x : bestSolution) {
+					logFile << x << " ";
+				}
+				logFile << endl;
+				break;
+			}
+			else if (nColor == optimalSolution[i]) {
+				logFile << endTime - beginTime << "," << result.second << "," << "(" << nColor<< ")"<<",";
+				for (const auto & x : colorSolution) {
+					logFile << x << " ";
+				}
+				logFile << endl;
+				break;
+			}
+			else {
+				cout << nColor << "is OK" << endl;
+				bestSolution.assign(colorSolution.begin(), colorSolution.end());
+				--nColor;
+			}
+		}
+		for (int i = 0; i < VNE.first; ++i) {
+			delete[] tabuList[i];
+		}
+		delete[]tabuList;
 	}
-	for (int i = 0; i < VNE.first; ++i) {
-		delete[] tabuList[i];
-	}
-	delete[]tabuList;
+	logFile.close();
 	system("pause");
 	return 0;
 }
@@ -141,7 +181,7 @@ void iniSolution(vector<int>& colorSolution, int nColor)
 }
 
 
-bool tabuSearch(const vector<vector<int>>& graph, vector<int>& colorSolution, vector<vector<int>>& rivalList, int ** tabuList,int fs)
+pair<bool,long> tabuSearch(const vector<vector<int>>& graph, vector<int>& colorSolution, vector<vector<int>>& rivalList, int ** tabuList,int fs)
 {
 	int bestfs = fs;
 	int iter = 0;
@@ -150,6 +190,7 @@ bool tabuSearch(const vector<vector<int>>& graph, vector<int>& colorSolution, ve
 	}
 	while (iter < max_iter_time&& fs != 0) {
 		auto move = findMove(graph, colorSolution, rivalList, tabuList,iter,fs,bestfs);
+
 		makeMove(graph,colorSolution, rivalList, tabuList,iter, move,fs);
 		if (bestfs > fs) {
 			bestfs = fs;
@@ -161,9 +202,9 @@ bool tabuSearch(const vector<vector<int>>& graph, vector<int>& colorSolution, ve
 	}
 	if (fs == 0) {
 	
-		return true;
+		return pair<bool,long>(true,iter);
 	}
-	return false;
+	return pair<bool,long>(false,iter);
 }
 
 int calDelta(const vector<vector<int>>& rivalList, int vertex, int oldColor, int newColor)
@@ -269,6 +310,11 @@ step findMove(const vector<vector<int>>& graph, vector<int>& colorSolution, vect
 			cout << "delta is" << bestDelta << "\t conflict number is " << conflictNum << endl;
 		}
 	}
+	if (vertex < 0) {
+		cout << iterTimes << endl;
+		cout << colorSolution[vertex]<<endl;
+		cout << bestDelta << endl;
+	}
 	return step(vertex,colorSolution[vertex],newColor,bestDelta);
 }
 
@@ -286,7 +332,7 @@ bool makeMove(const vector<vector<int>>& graph,vector<int>& colorSolution, vecto
 	colorSolution[get<0>(move)] = get<2>(move);
 	updateRivalList(graph, rivalList, move);
 	fs += get<3>(move);
-	tabuList[get<0>(move)][get<2>(move)] = iterTimes + fs * 3 + rand() % 20 + 10;
+	tabuList[get<0>(move)][get<1>(move)] = iterTimes + fs/2  + rand() % 10;
 	return 0;
 }
 
